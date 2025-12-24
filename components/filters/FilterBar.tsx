@@ -9,9 +9,10 @@ import { P2PTierToggle } from "./P2PTierToggle";
 
 interface FilterBarProps {
   showP2PTier?: boolean;
+  hidePeriod?: boolean;
 }
 
-export function FilterBar({ showP2PTier = false }: FilterBarProps) {
+export function FilterBar({ showP2PTier = false, hidePeriod = false }: FilterBarProps) {
   const { filters, setFilter } = useFilters();
   const { tokens, chains, isLoading } = useFilterOptions();
 
@@ -29,10 +30,12 @@ export function FilterBar({ showP2PTier = false }: FilterBarProps) {
         chains={chains}
         isLoading={isLoading}
       />
-      <TimeRangeSelect
-        value={filters.range}
-        onChange={(value) => setFilter("range", value)}
-      />
+      {!hidePeriod && (
+        <TimeRangeSelect
+          value={filters.range}
+          onChange={(value) => setFilter("range", value)}
+        />
+      )}
       {showP2PTier && (
         <P2PTierToggle
           value={filters.p2pTier}
