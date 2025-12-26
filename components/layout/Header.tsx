@@ -7,6 +7,7 @@ const pageNames: Record<string, string> = {
   "/p2p": "P2P Transfers",
   "/network": "Network Analysis",
   "/graph": "Transfer Graph",
+  "/clusters": "Community Clusters",
   "/dex": "DEX Trading",
   "/docs": "Documentation",
 };

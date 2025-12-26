@@ -10,6 +10,7 @@ import type {
   FiltersResponse,
   ApiError,
 } from "@/lib/types/api";
+import type { ClustersResponse, ClusterDetailResponse } from "@/lib/types/clusters";
 
 const fetcher = async <T>(url: string): Promise<T> => {
   const res = await fetch(url);
@@ -113,6 +114,57 @@ export function useDexData() {
 
   const { data, error, isLoading, mutate } = useSWR<DexResponse>(
     `/api/dex${queryString ? `?${queryString}` : ""}`,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 60000,
+    }
+  );
+
+  return {
+    data,
+    error: error?.message,
+    isLoading,
+    refresh: mutate,
+  };
+}
+
+// Fetch clusters list for a week
+export function useClustersData(weekStart?: string) {
+  const { queryString } = useFilters();
+
+  const url = weekStart
+    ? `/api/clusters?${queryString ? `${queryString}&` : ""}week_start=${weekStart}`
+    : null;
+
+  const { data, error, isLoading, mutate } = useSWR<ClustersResponse>(
+    url,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 60000,
+    }
+  );
+
+  return {
+    data,
+    error: error?.message,
+    isLoading,
+    refresh: mutate,
+  };
+}
+
+// Fetch single cluster detail
+export function useClusterDetail(weekStart: string | null, clusterId: number | null) {
+  const { queryString } = useFilters();
+
+  const url =
+    weekStart && clusterId
+      ? `/api/clusters/${clusterId}?${queryString ? `${queryString}&` : ""}week_start=${weekStart}`
+      : null;
+
+  const { data, error, isLoading, mutate } = useSWR<ClusterDetailResponse>(
+    url,
     fetcher,
     {
       revalidateOnFocus: false,

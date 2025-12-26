@@ -1,6 +1,7 @@
 import "server-only";
 import { query, scaleValue } from "../db";
 import { resolveTokenId, resolveChainId } from "./filters";
+import { getNodeClusterAssignments } from "./clusters";
 import type { GraphParams } from "@/lib/validation/graph";
 import type { GraphData, GraphNode, GraphEdge } from "@/lib/types/graph";
 
@@ -90,12 +91,16 @@ export async function getGraphData(params: GraphParams): Promise<GraphData> {
     const edgeValue = params.metric === "volume" ? volume : txCount;
     if (edgeValue < params.minEdge) continue;
 
-    // Initialize nodes if needed
-    if (!nodeMap.has(row.from_address)) nodeMap.set(row.from_address, initNode());
-    if (!nodeMap.has(row.to_address)) nodeMap.set(row.to_address, initNode());
+    // Normalize addresses to lowercase for consistent matching
+    const fromAddr = row.from_address.toLowerCase();
+    const toAddr = row.to_address.toLowerCase();
 
-    const fromNode = nodeMap.get(row.from_address)!;
-    const toNode = nodeMap.get(row.to_address)!;
+    // Initialize nodes if needed
+    if (!nodeMap.has(fromAddr)) nodeMap.set(fromAddr, initNode());
+    if (!nodeMap.has(toAddr)) nodeMap.set(toAddr, initNode());
+
+    const fromNode = nodeMap.get(fromAddr)!;
+    const toNode = nodeMap.get(toAddr)!;
 
     // Update from_address (outgoing)
     fromNode.outDegree++;
@@ -114,9 +119,9 @@ export async function getGraphData(params: GraphParams): Promise<GraphData> {
         : Math.log10(1 + txCount);
 
     edges.push({
-      id: `${row.from_address}-${row.to_address}`,
-      source: row.from_address,
-      target: row.to_address,
+      id: `${fromAddr}-${toAddr}`,
+      source: fromAddr,
+      target: toAddr,
       txCount,
       volume,
       weight,
@@ -147,7 +152,21 @@ export async function getGraphData(params: GraphParams): Promise<GraphData> {
     (e) => allowedAddresses.has(e.source) && allowedAddresses.has(e.target)
   );
 
-  // Build final node list with truncated labels
+  // Fetch cluster assignments from backend
+  let clusterAssignments: Map<string, number> = new Map();
+  try {
+    clusterAssignments = await getNodeClusterAssignments({
+      token: params.token,
+      chain: params.chain,
+      weekStart: params.weekStart,
+      p2pTier: params.tier ?? 2,
+    });
+  } catch (e) {
+    // Clustering data may not be available, continue without it
+    console.warn("Could not load cluster assignments:", e);
+  }
+
+  // Build final node list with truncated labels and cluster IDs
   const nodes: GraphNode[] = sortedNodes.map((n) => ({
     id: n.address,
     label: `${n.address.slice(0, 6)}...${n.address.slice(-4)}`,
@@ -156,6 +175,7 @@ export async function getGraphData(params: GraphParams): Promise<GraphData> {
     outDegree: n.outDegree,
     totalVolume: n.totalVolume,
     totalTxCount: n.totalTxCount,
+    stableClusterId: clusterAssignments.get(n.address.toLowerCase()) ?? null,
   }));
 
   return {

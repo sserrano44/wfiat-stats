@@ -1,5 +1,4 @@
 import Graph from "graphology";
-import louvain from "graphology-communities-louvain";
 import type { GraphData, WeightMetric, ScaleType } from "@/lib/types/graph";
 import { getCommunityColor } from "./communityColors";
 
@@ -52,27 +51,27 @@ export function buildGraph(data: GraphData): Graph {
 }
 
 /**
- * Run Louvain community detection and assign colors
+ * Apply backend-computed cluster assignments and assign colors
+ * Uses stableClusterId from the API response
  */
-export function applyCommunities(graph: Graph): Map<number, number> {
+export function applyCommunities(graph: Graph, data: GraphData): Map<number, number> {
   if (graph.order === 0) return new Map();
-
-  // Run Louvain clustering
-  const communities = louvain(graph, { resolution: 1.0 });
 
   // Count nodes per community
   const communityStats = new Map<number, number>();
 
-  // Apply community IDs and colors to nodes
+  // Apply community IDs and colors to nodes from backend data
   graph.forEachNode((nodeId) => {
-    const communityId = communities[nodeId] ?? 0;
-    const color = getCommunityColor(communityId);
+    // Find the node in the data to get its stableClusterId
+    const nodeData = data.nodes.find((n) => n.id === nodeId);
+    const clusterId = nodeData?.stableClusterId ?? 0;
+    const color = getCommunityColor(clusterId);
 
-    graph.setNodeAttribute(nodeId, "community", communityId);
+    graph.setNodeAttribute(nodeId, "community", clusterId);
     graph.setNodeAttribute(nodeId, "color", color);
 
     // Track community sizes
-    communityStats.set(communityId, (communityStats.get(communityId) || 0) + 1);
+    communityStats.set(clusterId, (communityStats.get(clusterId) || 0) + 1);
   });
 
   // Update edge colors based on source node

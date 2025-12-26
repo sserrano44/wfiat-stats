@@ -8,6 +8,7 @@ export interface GraphNode {
   outDegree: number;
   totalVolume: number;     // Sum of all edge volumes (scaled)
   totalTxCount: number;    // Sum of all edge tx counts
+  stableClusterId: number | null;  // Backend-computed cluster ID
 }
 
 export interface GraphEdge {

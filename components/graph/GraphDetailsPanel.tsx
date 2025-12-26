@@ -119,14 +119,22 @@ export function GraphDetailsPanel({
               </span>
             </div>
           </div>
-          {onFocusCommunity && (
-            <button
-              onClick={() => onFocusCommunity(communityId)}
-              className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
+          <div className="flex gap-1">
+            {onFocusCommunity && (
+              <button
+                onClick={() => onFocusCommunity(communityId)}
+                className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
+              >
+                Focus
+              </button>
+            )}
+            <a
+              href={`/clusters?cluster=${communityId}`}
+              className="rounded bg-blue-100 px-2 py-1 text-xs text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300"
             >
-              Focus
-            </button>
-          )}
+              View
+            </a>
+          </div>
         </div>
 
         {/* Stats */}

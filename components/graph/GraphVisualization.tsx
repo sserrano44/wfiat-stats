@@ -81,7 +81,7 @@ export function GraphVisualization({ weekStart }: GraphVisualizationProps) {
     }
 
     const graph = buildGraph(data);
-    applyCommunities(graph);
+    applyCommunities(graph, data);
     computeNodeSizes(graph, state.controls.metric, state.controls.scale);
     graphRef.current = graph;
 

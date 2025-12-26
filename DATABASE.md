@@ -274,13 +274,18 @@ The `analytics` schema contains tables for P2P classification and network analys
 
 ```
 analytics schema
-├── addresses          # Address enrichment cache (is_contract status)
-├── address_labels     # Exclusion list (DEX pools, routers, bridges)
-├── transfer_facts     # P2P tier classification per transfer
-├── metrics_daily      # Daily aggregate metrics
-├── edges_weekly       # Weekly P2P edges for graph analysis
-├── network_weekly     # Computed graph KPIs
-└── analytics_state    # Job checkpointing
+├── addresses              # Address enrichment cache (is_contract status)
+├── address_labels         # Exclusion list (DEX pools, routers, bridges)
+├── transfer_facts         # P2P tier classification per transfer
+├── metrics_daily          # Daily aggregate metrics
+├── edges_weekly           # Weekly P2P edges for graph analysis
+├── network_weekly         # Computed graph KPIs
+├── analytics_state        # Job checkpointing
+├── cluster_runs           # Clustering algorithm parameters
+├── stable_clusters        # Persistent cluster identities
+├── cluster_instances_weekly  # Community snapshots per week
+├── cluster_members_weekly    # Node-to-cluster assignments
+└── cluster_transitions_weekly # Cluster evolution tracking
 ```
 
 ### analytics.addresses
@@ -300,16 +305,17 @@ Cache of address metadata discovered from transfers and trades.
 
 ### analytics.address_labels
 
-Known addresses to exclude from P2P classification.
+Known addresses to exclude from P2P classification and/or clustering.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | chain_id | INTEGER | FK to chains.id |
 | address | VARCHAR(42) | Ethereum address |
-| category | VARCHAR(32) | dex_pool, dex_router, bridge, treasury, token_contract, cex |
+| category | VARCHAR(32) | dex_pool, dex_router, bridge, treasury, token_contract, cex, protocol, other |
 | label | TEXT | Human-readable label |
-| exclude_from_p2p | BOOLEAN | Whether to exclude from P2P (default: true) |
-| source | VARCHAR(32) | manual, auto_pool, auto_router |
+| exclude_from_p2p | BOOLEAN | Whether to exclude from P2P tier classification (default: true) |
+| exclude_from_clustering | BOOLEAN | Whether to exclude from community clustering (default: false) |
+| source | VARCHAR(32) | manual, auto_pool, auto_router, auto_token |
 
 **Unique constraint**: (chain_id, address, category)
 
@@ -503,4 +509,187 @@ JOIN chains c ON al.chain_id = c.id
 WHERE al.exclude_from_p2p = TRUE
 GROUP BY c.name, al.category, al.source
 ORDER BY c.name, count DESC;
+```
+
+---
+
+## Clustering Schema
+
+The clustering tables store community detection results using the Louvain algorithm, with stable cluster IDs that track communities across weeks.
+
+For detailed frontend integration patterns and query examples, see [CLUSTERING.md](./CLUSTERING.md).
+
+### Schema Overview
+
+```
+analytics schema (clustering tables)
+├── cluster_runs              # Algorithm parameters for reproducibility
+├── stable_clusters           # Persistent cluster identities across weeks
+├── cluster_instances_weekly  # Community snapshots with metrics per week
+├── cluster_members_weekly    # Node-to-cluster assignments
+└── cluster_transitions_weekly # Week-over-week evolution (splits/merges)
+```
+
+### analytics.cluster_runs
+
+Algorithm parameters for each clustering run (for reproducibility).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| run_id | BIGSERIAL | Primary key |
+| created_at | TIMESTAMP | When the run was executed |
+| algorithm | VARCHAR(32) | Algorithm name (default: 'louvain') |
+| algo_version | VARCHAR(32) | Library version (e.g., 'networkx-3.2') |
+| weight_metric | VARCHAR(16) | Edge weight: 'volume' or 'tx_count' |
+| p2p_tier | SMALLINT | 1, 2, or 3 |
+| resolution | NUMERIC | Louvain resolution parameter |
+| random_seed | INTEGER | Seed for reproducibility |
+| min_jaccard | NUMERIC | Threshold for cluster matching |
+| min_intersection | INTEGER | Min nodes for cluster matching |
+
+### analytics.stable_clusters
+
+Persistent cluster identities that track communities across time.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| stable_cluster_id | BIGSERIAL | Primary key - use this to track clusters |
+| token_id | INTEGER | FK to tokens.id |
+| chain_id | INTEGER | FK to chains.id |
+| p2p_tier | SMALLINT | 1, 2, or 3 |
+| created_week_start | DATE | Week when this cluster first appeared |
+| created_at | TIMESTAMP | Creation timestamp |
+
+### analytics.cluster_instances_weekly
+
+Community snapshots for each week with aggregate metrics.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| week_start | DATE | Monday of ISO week |
+| token_id | INTEGER | FK to tokens.id |
+| chain_id | INTEGER | FK to chains.id |
+| p2p_tier | SMALLINT | 1, 2, or 3 |
+| run_id | BIGINT | FK to cluster_runs |
+| community_label | INTEGER | Raw Louvain label (changes each run) |
+| stable_cluster_id | BIGINT | FK to stable_clusters - **use this for tracking** |
+| node_count | BIGINT | Number of addresses |
+| edge_count | BIGINT | Number of edges within community |
+| total_weight | NUMERIC | Total edge weight |
+| internal_weight | NUMERIC | Weight of edges within community |
+| external_weight | NUMERIC | Weight of edges to other communities |
+| top_node_address | VARCHAR(42) | Highest-degree address |
+| top_node_weight | NUMERIC | Weight of top node |
+
+**Primary key**: (week_start, token_id, chain_id, p2p_tier, run_id, community_label)
+
+### analytics.cluster_members_weekly
+
+Node-to-cluster assignments with node metrics.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| week_start | DATE | Monday of ISO week |
+| token_id | INTEGER | FK to tokens.id |
+| chain_id | INTEGER | FK to chains.id |
+| p2p_tier | SMALLINT | 1, 2, or 3 |
+| run_id | BIGINT | FK to cluster_runs |
+| address | VARCHAR(42) | Ethereum address (lowercase) |
+| community_label | INTEGER | Raw Louvain label |
+| stable_cluster_id | BIGINT | FK to stable_clusters |
+| degree | BIGINT | Number of edges |
+| in_weight | NUMERIC | Sum of incoming edge weights |
+| out_weight | NUMERIC | Sum of outgoing edge weights |
+| total_weight | NUMERIC | in_weight + out_weight |
+
+**Primary key**: (week_start, token_id, chain_id, p2p_tier, run_id, address)
+
+### analytics.cluster_transitions_weekly
+
+Tracks how communities evolve between consecutive weeks.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| prev_week_start | DATE | Previous week |
+| week_start | DATE | Current week |
+| token_id | INTEGER | FK to tokens.id |
+| chain_id | INTEGER | FK to chains.id |
+| p2p_tier | SMALLINT | 1, 2, or 3 |
+| prev_stable_cluster_id | BIGINT | Parent cluster from previous week |
+| stable_cluster_id | BIGINT | Child cluster in current week |
+| intersection_nodes | BIGINT | Number of shared addresses |
+| jaccard | NUMERIC | Jaccard similarity: \|A ∩ B\| / \|A ∪ B\| |
+| overlap_prev | NUMERIC | Fraction of prev cluster |
+| overlap_new | NUMERIC | Fraction of new cluster |
+| is_primary | BOOLEAN | TRUE if this is the best match |
+
+**Primary key**: (prev_week_start, week_start, token_id, chain_id, p2p_tier, prev_stable_cluster_id, stable_cluster_id)
+
+## Clustering Queries
+
+### Communities for a specific week
+
+```sql
+SELECT
+    ci.stable_cluster_id,
+    ci.node_count,
+    ci.edge_count,
+    ci.total_weight / 1e18 AS total_volume,
+    ci.top_node_address
+FROM analytics.cluster_instances_weekly ci
+JOIN tokens t ON ci.token_id = t.id
+JOIN chains c ON ci.chain_id = c.id
+WHERE t.symbol = 'wARS'
+  AND c.name = 'worldchain'
+  AND ci.p2p_tier = 2
+  AND ci.week_start = '2024-12-16'
+ORDER BY ci.node_count DESC;
+```
+
+### Cluster size over time
+
+```sql
+SELECT
+    week_start,
+    node_count,
+    edge_count,
+    total_weight / 1e18 AS volume
+FROM analytics.cluster_instances_weekly
+WHERE stable_cluster_id = 42
+ORDER BY week_start;
+```
+
+### Detect community splits
+
+```sql
+SELECT
+    prev_stable_cluster_id AS parent,
+    week_start,
+    COUNT(*) AS child_count,
+    ARRAY_AGG(stable_cluster_id) AS children
+FROM analytics.cluster_transitions_weekly
+WHERE token_id = 1 AND chain_id = 3 AND p2p_tier = 2
+GROUP BY prev_stable_cluster_id, week_start
+HAVING COUNT(*) > 1
+ORDER BY week_start DESC;
+```
+
+### Find cluster for an address
+
+```sql
+SELECT
+    cm.week_start,
+    cm.stable_cluster_id,
+    ci.node_count AS cluster_size,
+    cm.total_weight / 1e18 AS address_volume
+FROM analytics.cluster_members_weekly cm
+JOIN analytics.cluster_instances_weekly ci
+    ON ci.week_start = cm.week_start
+   AND ci.stable_cluster_id = cm.stable_cluster_id
+   AND ci.token_id = cm.token_id
+   AND ci.chain_id = cm.chain_id
+   AND ci.p2p_tier = cm.p2p_tier
+   AND ci.run_id = cm.run_id
+WHERE cm.address = '0x1234...'
+ORDER BY cm.week_start DESC;
 ```
