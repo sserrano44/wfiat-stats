@@ -2,6 +2,8 @@
 
 Analytics dashboard for wFiat stablecoins (wARS, wBRL, wMXN, wCOP, wPEN, wCLP) across Ethereum, Base, and Worldchain.
 
+url: wfiat-stats.vercel.app
+
 ## Features
 
 - **Overview Page**: Net issuance, minted/burned volumes, P2P activity, DEX trading metrics
